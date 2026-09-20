@@ -1,0 +1,12 @@
+# The image only needs the prebuilt dist/ + default.conf.template. Keep the build
+# context small: exclude source + node_modules (dist is built outside Docker).
+node_modules
+src
+index.html
+vite.config.js
+package.json
+package-lock.json
+Dockerfile
+.dockerignore
+README.md
+.npmrc

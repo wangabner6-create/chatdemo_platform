@@ -1,0 +1,161 @@
+name: Observability evaluation
+
+on:
+  pull_request:
+    paths:
+      - "chatdemo/src/**"
+      - "chatdemo/evals/**"
+      - "chatdemo/scripts/ingest_docs.py"
+      - "chatdemo/pyproject.toml"
+      - "chatdemo/uv.lock"
+      - ".github/workflows/observability-eval.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: observability-eval-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  evaluate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: chatdemo
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Install uv and Python
+        uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4 # v10.1.0
+        with:
+          python-version: "3.11"
+          enable-cache: true
+          cache-dependency-glob: chatdemo/uv.lock
+
+      - name: Install project
+        run: uv sync --frozen --extra dev --extra observability
+
+      - name: Run deterministic tests
+        run: uv run pytest
+
+      - name: Check evaluation code
+        run: uv run ruff check src/chatdemo/evaluation.py tests/test_evaluation.py
+
+      - name: Detect live evaluation configuration
+        id: eval-config
+        env:
+          EVAL_BASE_URL: ${{ secrets.CHATDEMO_EVAL_BASE_URL }}
+          EVAL_API_KEY: ${{ secrets.CHATDEMO_EVAL_API_KEY }}
+          EVAL_MODEL: ${{ vars.CHATDEMO_EVAL_MODEL }}
+          EVAL_EMBED_MODEL: ${{ vars.CHATDEMO_EVAL_EMBED_MODEL }}
+        shell: bash
+        run: |
+          if [[ -n "$EVAL_BASE_URL" && -n "$EVAL_API_KEY" && -n "$EVAL_MODEL" && -n "$EVAL_EMBED_MODEL" ]]; then
+            echo "configured=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "configured=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Explain skipped live evaluation
+        if: steps.eval-config.outputs.configured != 'true'
+        shell: bash
+        run: |
+          echo "## ChatDemo observability evaluation" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "Deterministic tests passed, but the live regression set was skipped." >> "$GITHUB_STEP_SUMMARY"
+          echo "Configure CHATDEMO_EVAL_BASE_URL / CHATDEMO_EVAL_API_KEY secrets and CHATDEMO_EVAL_MODEL / CHATDEMO_EVAL_EMBED_MODEL variables to activate the PR quality gate." >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Rebuild the RAG index for the evaluation provider
+        if: steps.eval-config.outputs.configured == 'true'
+        env:
+          CHATDEMO_BASE_URL: ${{ secrets.CHATDEMO_EVAL_BASE_URL }}
+          CHATDEMO_API_KEY: ${{ secrets.CHATDEMO_EVAL_API_KEY }}
+          CHATDEMO_EMBED_MODEL: ${{ vars.CHATDEMO_EVAL_EMBED_MODEL }}
+          CHATDEMO_RERANK_MODEL: disabled
+        run: uv run python scripts/ingest_docs.py
+
+      - name: Run quality regression gate
+        if: steps.eval-config.outputs.configured == 'true'
+        env:
+          CHATDEMO_BASE_URL: ${{ secrets.CHATDEMO_EVAL_BASE_URL }}
+          CHATDEMO_API_KEY: ${{ secrets.CHATDEMO_EVAL_API_KEY }}
+          CHATDEMO_MODEL: ${{ vars.CHATDEMO_EVAL_MODEL }}
+          CHATDEMO_ROUTER_MODEL: ${{ vars.CHATDEMO_EVAL_MODEL }}
+          CHATDEMO_SKILL_MODEL: ${{ vars.CHATDEMO_EVAL_MODEL }}
+          CHATDEMO_RELATED_MODEL: ${{ vars.CHATDEMO_EVAL_MODEL }}
+          CHATDEMO_API_STYLE: completion
+          CHATDEMO_ENABLE_THINKING: "false"
+          CHATDEMO_EMBED_MODEL: ${{ vars.CHATDEMO_EVAL_EMBED_MODEL }}
+          CHATDEMO_RERANK_MODEL: disabled
+          CHATDEMO_ENABLED: docs-assistant,general-fallback
+          CHATDEMO_REDIS_URL: ""
+          CHATDEMO_SAFETY: "on"
+          CHATDEMO_MAX_TOKENS: "768"
+          CHATDEMO_TRACING: ${{ secrets.CHATDEMO_EVAL_PHOENIX_ENDPOINT != '' && 'on' || 'off' }}
+          CHATDEMO_PHOENIX_ENDPOINT: ${{ secrets.CHATDEMO_EVAL_PHOENIX_ENDPOINT }}
+          CHATDEMO_PHOENIX_URL: ${{ secrets.CHATDEMO_EVAL_PHOENIX_URL }}
+          CHATDEMO_TRACE_PROJECT: chatdemo-ci
+          CHATDEMO_EVAL_PUBLISH_PHOENIX: ${{ secrets.CHATDEMO_EVAL_PHOENIX_URL != '' && 'true' || 'false' }}
+          PHOENIX_API_KEY: ${{ secrets.CHATDEMO_EVAL_PHOENIX_API_KEY }}
+        run: uv run chatdemo-eval --require-baseline --version "${GITHUB_SHA::12}"
+
+      - name: Add report to workflow summary
+        if: always() && steps.eval-config.outputs.configured == 'true'
+        shell: bash
+        run: |
+          if [[ -f evals/results/report.md ]]; then
+            cat evals/results/report.md >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Upload evaluation report
+        if: always() && steps.eval-config.outputs.configured == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: chatdemo-observability-eval-${{ github.run_id }}
+          path: |
+            chatdemo/evals/results/report.json
+            chatdemo/evals/results/report.md
+          if-no-files-found: warn
+          retention-days: 30
+
+      - name: Publish or update PR report
+        if: >-
+          always() &&
+          steps.eval-config.outputs.configured == 'true' &&
+          github.event_name == 'pull_request' &&
+          github.event.pull_request.head.repo.full_name == github.repository
+        uses: actions/github-script@v9
+        with:
+          script: |
+            const fs = require("fs");
+            const reportPath = "chatdemo/evals/results/report.md";
+            if (!fs.existsSync(reportPath)) return;
+            const marker = "<!-- chatdemo-observability-eval -->";
+            const body = `${marker}\n${fs.readFileSync(reportPath, "utf8")}`;
+            const { owner, repo } = context.repo;
+            const issue_number = context.issue.number;
+            const { data: comments } = await github.rest.issues.listComments({
+              owner,
+              repo,
+              issue_number,
+              per_page: 100,
+            });
+            const previous = comments.find(
+              (comment) => comment.user?.type === "Bot" && comment.body?.includes(marker),
+            );
+            if (previous) {
+              await github.rest.issues.updateComment({
+                owner,
+                repo,
+                comment_id: previous.id,
+                body,
+              });
+            } else {
+              await github.rest.issues.createComment({ owner, repo, issue_number, body });
+            }

@@ -1,0 +1,16 @@
+# READ-ONLY local retriever: embeds the query, does cosine recall over a
+# pre-built index (see scripts/ingest_docs.py), reranks the shortlist.
+# side_effecting:false -> no confirmation gate.
+name: search_docs
+description: Search this platform's own documentation (architecture, configuration, authoring skills/workflows) and return the top matching passages with titles and source paths. Call this before answering any question about how the platform works; pass a standalone, semantic-search-friendly query distilled from the conversation.
+side_effecting: false
+input_schema:
+  type: object
+  properties:
+    query:
+      type: string
+      description: A standalone, semantic-search-friendly query distilled from the conversation (resolve pronouns/ellipsis; keep the key terms and intent).
+    k:
+      type: integer
+      description: Max passages to return (default 8, max 20).
+  required: [query]

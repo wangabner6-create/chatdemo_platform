@@ -1,0 +1,488 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+
+@custom-variant dark (&:is(.dark *));
+
+/* ------------------------------------------------------------------ */
+/* Design token definitions. Editing the `:root` / `.dark` values below is enough
+   to reskin the entire application, because every component consumes color
+   through these custom properties (routed through the `@theme inline` block)
+   rather than any hardcoded hex value. `--primary` is the single accent color —
+   replace it with whatever matches your own brand. */
+/* ------------------------------------------------------------------ */
+:root {
+  --radius: 0.65rem;
+
+  --background: oklch(1 0 0);
+  --foreground: oklch(0.18 0.01 285);
+
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.18 0.01 285);
+
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0.18 0.01 285);
+
+  /* ---- the brand's accent color: modify just these two lines to retheme it ---- */
+  --primary: oklch(0.55 0.22 265);
+  --primary-foreground: oklch(0.98 0.01 265);
+  /* ------------------------------------------------------------------- */
+
+  --secondary: oklch(0.96 0.01 285);
+  --secondary-foreground: oklch(0.22 0.02 285);
+
+  --muted: oklch(0.96 0.01 285);
+  --muted-foreground: oklch(0.52 0.02 285);
+
+  --accent: oklch(0.96 0.02 265);
+  --accent-foreground: oklch(0.28 0.05 265);
+
+  --destructive: oklch(0.58 0.22 27);
+  --destructive-foreground: oklch(0.98 0.01 27);
+
+  --success: oklch(0.6 0.16 150);
+
+  --border: oklch(0.91 0.01 285);
+  --input: oklch(0.91 0.01 285);
+  --ring: oklch(0.55 0.22 265 / 0.4);
+
+  --sidebar: oklch(0.98 0.005 285);
+  --sidebar-foreground: oklch(0.18 0.01 285);
+  --sidebar-border: oklch(0.91 0.01 285);
+}
+
+.dark {
+  --background: oklch(0.16 0.01 285);
+  --foreground: oklch(0.95 0.005 285);
+
+  --card: oklch(0.2 0.01 285);
+  --card-foreground: oklch(0.95 0.005 285);
+
+  --popover: oklch(0.2 0.01 285);
+  --popover-foreground: oklch(0.95 0.005 285);
+
+  --primary: oklch(0.7 0.18 265);
+  --primary-foreground: oklch(0.15 0.02 265);
+
+  --secondary: oklch(0.26 0.01 285);
+  --secondary-foreground: oklch(0.95 0.005 285);
+
+  --muted: oklch(0.26 0.01 285);
+  --muted-foreground: oklch(0.65 0.01 285);
+
+  --accent: oklch(0.28 0.03 265);
+  --accent-foreground: oklch(0.92 0.02 265);
+
+  --destructive: oklch(0.65 0.2 25);
+  --destructive-foreground: oklch(0.98 0.01 25);
+
+  --success: oklch(0.7 0.16 150);
+
+  --border: oklch(1 0 0 / 10%);
+  --input: oklch(1 0 0 / 15%);
+  --ring: oklch(0.7 0.18 265 / 0.5);
+
+  --sidebar: oklch(0.19 0.01 285);
+  --sidebar-foreground: oklch(0.95 0.005 285);
+  --sidebar-border: oklch(1 0 0 / 8%);
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-success: var(--success);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  html,
+  body,
+  #root {
+    height: 100%;
+    margin: 0;
+  }
+  body {
+    @apply bg-background text-foreground;
+    font-family:
+      ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  }
+}
+
+/* ---- utility classes reused across components ---- */
+.ellipsis {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  display: block;
+}
+
+/* a horizontally-centered content column, in the style of Perplexity's layout */
+.chat-col {
+  width: 100%;
+  max-width: 760px;
+  margin: 0 auto;
+  padding-left: 1.25rem;
+  padding-right: 1.25rem;
+  box-sizing: border-box;
+}
+.chat-col:first-child {
+  padding-top: 1.5rem;
+  padding-bottom: 1.5rem;
+}
+
+/* ---- chat session list styling ---- */
+.session-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 0.6rem;
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  color: var(--sidebar-foreground);
+  opacity: 0.75;
+}
+.session-row:hover {
+  background: var(--color-accent);
+  opacity: 1;
+}
+.session-row.active {
+  background: var(--color-accent);
+  color: var(--color-accent-foreground);
+  opacity: 1;
+}
+.session-title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.875rem;
+}
+.session-del {
+  border: 0;
+  background: transparent;
+  color: currentColor;
+  cursor: pointer;
+  opacity: 0;
+  padding: 0 0.15rem;
+  font-size: 0.8rem;
+  line-height: 1;
+}
+.session-row:hover .session-del {
+  opacity: 0.6;
+}
+.session-del:hover {
+  opacity: 1 !important;
+}
+
+/* ---- delete control for an individual message, shown only on hover ---- */
+.msg-del {
+  border: 0;
+  background: transparent;
+  color: var(--color-muted-foreground);
+  cursor: pointer;
+  opacity: 0;
+  padding: 0.1rem 0.3rem;
+  font-size: 0.75rem;
+  line-height: 1;
+  transition: opacity 0.1s ease;
+  flex-shrink: 0;
+}
+.msg-wrap:hover .msg-del {
+  opacity: 1;
+}
+.msg-del:hover {
+  color: var(--color-foreground);
+}
+.msg-del-slot {
+  position: absolute;
+  top: 0;
+  right: 0;
+}
+
+/* ---- styling for the user's chat bubble ---- */
+.user-bubble {
+  max-width: 85%;
+  padding: 0.55rem 0.85rem;
+  border-radius: 14px;
+  background: var(--color-muted);
+  border: 1px solid var(--color-border);
+}
+
+/* ---- rows listing related follow-up questions ---- */
+.related-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  width: 100%;
+  text-align: left;
+  border: 0;
+  border-top: 1px solid var(--color-border);
+  background: transparent;
+  color: var(--color-foreground);
+  cursor: pointer;
+  padding: 0.5rem 0.15rem;
+  font-size: 0.82rem;
+}
+.related-row:hover {
+  color: var(--color-primary);
+}
+.related-plus {
+  color: var(--color-muted-foreground);
+  flex-shrink: 0;
+}
+
+/* ---- the left-hand rail with piano-key style question navigation ---- */
+.piano-nav {
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  width: 48px;
+  padding: 1.25rem 0.35rem;
+  overflow-y: auto;
+  overflow-x: hidden;
+  border-right: 1px solid var(--color-border);
+  background: var(--color-background);
+}
+.piano-nav::-webkit-scrollbar {
+  width: 0;
+}
+.piano-key {
+  position: relative;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  width: 34px;
+  height: 22px;
+  padding: 0;
+  border: 1px solid var(--color-border);
+  border-radius: 3px;
+  cursor: pointer;
+  background: var(--color-card);
+  color: var(--color-muted-foreground);
+  transition:
+    background 0.12s ease,
+    color 0.12s ease;
+}
+.piano-key.black {
+  background: var(--color-secondary);
+}
+.piano-key:hover,
+.piano-key.active {
+  background: var(--color-primary);
+  color: var(--color-primary-foreground);
+  border-color: var(--color-primary);
+}
+.piano-key-num {
+  font-size: 0.6rem;
+  font-weight: 600;
+  padding-left: 5px;
+  opacity: 0.75;
+  pointer-events: none;
+  user-select: none;
+}
+.piano-flyout {
+  position: fixed;
+  transform: translateY(-50%);
+  max-width: 340px;
+  width: max-content;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  background: var(--color-popover);
+  border: 1px solid var(--color-border);
+  color: var(--color-popover-foreground);
+  padding: 0.45rem 0.65rem;
+  border-radius: var(--radius-md);
+  font-size: 0.78rem;
+  line-height: 1.4;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.25);
+  z-index: 50;
+  pointer-events: none;
+}
+
+/* accent-colored heading used above sections like Sources or Related */
+.section-heading {
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: var(--color-primary);
+}
+
+/* ---- code block styling: the copy button and horizontal/vertical scroll behavior ---- */
+.code-block {
+  position: relative;
+}
+.code-block pre {
+  max-height: 460px;
+  overflow: auto;
+}
+.code-copy {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  border: 1px solid var(--color-border);
+  background: var(--color-background);
+  color: var(--color-muted-foreground);
+  border-radius: var(--radius-sm);
+  font-size: 0.72rem;
+  padding: 0.15rem 0.5rem;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.1s ease;
+}
+.code-block:hover .code-copy {
+  opacity: 1;
+}
+.code-copy:hover {
+  color: var(--color-foreground);
+}
+
+/* ---- rendered markdown output ---- */
+.md {
+  font-size: 0.88rem;
+  line-height: 1.6;
+  color: var(--color-foreground);
+}
+.md > :first-child {
+  margin-top: 0;
+}
+.md > :last-child {
+  margin-bottom: 0;
+}
+.md h1,
+.md h2,
+.md h3 {
+  margin: 1.2em 0 0.5em;
+  line-height: 1.3;
+  font-weight: 600;
+}
+.md h1 {
+  font-size: 1.5em;
+}
+.md h2 {
+  font-size: 1.25em;
+}
+.md h3 {
+  font-size: 1.1em;
+}
+.md p {
+  margin: 0.6em 0;
+}
+.md ul,
+.md ol {
+  margin: 0.6em 0;
+  padding-left: 1.4em;
+}
+.md li {
+  margin: 0.25em 0;
+}
+.md a {
+  color: var(--color-primary);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.md code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.9em;
+  background: var(--color-muted);
+  padding: 0.1em 0.35em;
+  border-radius: 5px;
+}
+.md pre {
+  background: var(--color-muted);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: 0.85rem;
+  overflow-x: auto;
+}
+.md pre code {
+  background: transparent;
+  padding: 0;
+}
+.md blockquote {
+  margin: 0.6em 0;
+  padding-left: 0.9em;
+  border-left: 3px solid var(--color-border);
+  color: var(--color-muted-foreground);
+}
+.md table {
+  border-collapse: collapse;
+  margin: 0.6em 0;
+}
+.md th,
+.md td {
+  border: 1px solid var(--color-border);
+  padding: 0.35em 0.6em;
+}
+
+/* ---- feedback UI: the thumbs-up/down vote buttons and the sidebar's feedback box ---- */
+.vote-btn.vote-up.on button {
+  color: var(--color-primary);
+}
+.vote-btn.vote-down.on button {
+  color: var(--color-destructive);
+}
+
+.fb-box {
+  padding: 0.5rem 0.75rem;
+  border-top: 1px solid var(--color-sidebar-border);
+}
+.fb-text {
+  width: 100%;
+  box-sizing: border-box;
+  resize: vertical;
+  font: inherit;
+  font-size: 0.82rem;
+  color: var(--color-foreground);
+  background: var(--color-background);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: 0.5rem 0.6rem;
+}
+.fb-text:focus {
+  outline: none;
+  border-color: var(--color-primary);
+}
+.fb-vote {
+  border: 1px solid var(--color-border);
+  background: transparent;
+  border-radius: var(--radius-sm);
+  padding: 0.1rem 0.4rem;
+  cursor: pointer;
+  font-size: 0.95rem;
+  line-height: 1.4;
+}
+.fb-vote.on {
+  border-color: var(--color-primary);
+  background: color-mix(in srgb, var(--color-primary) 16%, transparent);
+}

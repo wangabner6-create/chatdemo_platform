@@ -1,0 +1,78 @@
+# Bring the whole stack up:  docker compose up --build
+# - redis   : persistent store for multi-turn conversations + pending tool approvals
+# - backend : the ChatDemo FastAPI app (agent orchestration runtime), exposed on :8000
+# - ui      : the React chat UI on :80, served by nginx from ui/dist
+# Provider credentials go in a root-level .env (start from .env.example).
+# NOTE: the UI bundle needs to exist before you build:
+#   cd ui && npm install && npm run build     # produces ui/dist/, then: docker compose up --build
+services:
+  redis:
+    # Using Redis Stack (plain Redis + RediSearch) rather than vanilla Redis: it
+    # already backs the `feedbackchatbot` search index and leaves room for a future
+    # session-memory vector index, while ordinary SET/GET usage (sessions, pending
+    # approvals) keeps behaving exactly like stock Redis. The module loader runs
+    # from the image's own entrypoint; persistence is enabled via REDIS_ARGS rather
+    # than a custom `command:` override, so AOF stays on.
+    image: redis/redis-stack-server:latest
+    environment:
+      REDIS_ARGS: "--appendonly yes"
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  backend:
+    build: ./chatdemo
+    ports:
+      - "8000:8000"
+    environment:
+      # conversation state + pending tool approvals live in the redis service
+      CHATDEMO_REDIS_URL: redis://redis:6379/0
+      CHATDEMO_SESSION_TTL: ${CHATDEMO_SESSION_TTL:-2592000}
+      CHATDEMO_PENDING_TTL: ${CHATDEMO_PENDING_TTL:-3600}
+      # one model setting per role: CHATDEMO_MODEL is mandatory and acts as the
+      # fallback; every other role inherits its model/api-style from it unless
+      # explicitly overridden below
+      CHATDEMO_MODEL: ${CHATDEMO_MODEL:-mock}                    # mandatory fallback model
+      CHATDEMO_API_STYLE: ${CHATDEMO_API_STYLE:-completion}
+      CHATDEMO_ROUTER_MODEL: ${CHATDEMO_ROUTER_MODEL:-}          # picks the specialist
+      CHATDEMO_ROUTER_API_STYLE: ${CHATDEMO_ROUTER_API_STYLE:-}
+      CHATDEMO_SKILL_MODEL: ${CHATDEMO_SKILL_MODEL:-}            # every skill uses this
+      CHATDEMO_SKILL_API_STYLE: ${CHATDEMO_SKILL_API_STYLE:-}
+      CHATDEMO_WF_MODEL: ${CHATDEMO_WF_MODEL:-}                  # workflow step model
+      CHATDEMO_WF_API_STYLE: ${CHATDEMO_WF_API_STYLE:-}          # blank -> honor each manifest's own style
+      CHATDEMO_RELATED_MODEL: ${CHATDEMO_RELATED_MODEL:-}        # generates related-question chips
+      CHATDEMO_RELATED_API_STYLE: ${CHATDEMO_RELATED_API_STYLE:-}
+      CHATDEMO_BASE_URL: ${CHATDEMO_BASE_URL:-}
+      CHATDEMO_API_KEY: ${CHATDEMO_API_KEY:-}
+      CHATDEMO_HOSTED_TOOLS: ${CHATDEMO_HOSTED_TOOLS:-}
+      CHATDEMO_WEBSEARCH_TOOL: ${CHATDEMO_WEBSEARCH_TOOL:-web_search}
+      CHATDEMO_TRACING: ${CHATDEMO_TRACING:-off}
+      CHATDEMO_PHOENIX_ENDPOINT: ${CHATDEMO_PHOENIX_ENDPOINT:-http://host.docker.internal:6006/v1/traces}
+      CHATDEMO_TRACE_PROJECT: ${CHATDEMO_TRACE_PROJECT:-chatdemo}
+      # which content is active, how routing behaves, and the safety gate
+      CHATDEMO_ENABLED: ${CHATDEMO_ENABLED:-}
+      CHATDEMO_ROUTE: ${CHATDEMO_ROUTE:-}
+      CHATDEMO_SAFETY: ${CHATDEMO_SAFETY:-on}
+      # unset -> the read-only feedback admin view (GET /feedback) stays disabled
+      CHATDEMO_ADMIN_TOKEN: ${CHATDEMO_ADMIN_TOKEN:-}
+      CHATDEMO_SKILL_SCRIPTS: ${CHATDEMO_SKILL_SCRIPTS:-on}
+      CHATDEMO_SCRIPT_TIMEOUT: ${CHATDEMO_SCRIPT_TIMEOUT:-20}
+    depends_on:
+      redis:
+        condition: service_healthy
+
+  ui:
+    build: ./ui
+    ports:
+      - "80:80"
+    environment:
+      BACKEND_URL: http://backend:8000   # nginx forwards /chat and /health to this
+    depends_on:
+      - backend
+
+volumes:
+  redis-data:

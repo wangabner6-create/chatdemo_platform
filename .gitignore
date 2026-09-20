@@ -1,0 +1,39 @@
+# ── Credentials and machine-local config ──────────────────────────────────────
+.env
+**/.env
+.npmrc
+.npmrc.bak
+!.env.example
+
+# ── Python build/tooling output ───────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+.eggs/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+build/
+dist/
+chatdemo/evals/results/
+*.db
+*.db-shm
+*.db-wal
+*.sqlite3
+.phoenix/
+
+# ── Node / frontend build output ──────────────────────────────────────────────
+node_modules/
+ui/dist/
+*.log
+npm-debug.log*
+pnpm-debug.log*
+
+# ── OS and editor cruft ────────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+*.swp
+.idea/
+.vscode/

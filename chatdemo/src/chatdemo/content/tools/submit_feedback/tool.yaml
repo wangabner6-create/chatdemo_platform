@@ -1,0 +1,21 @@
+# Shared, reusable typed tool. Side-effecting -> gated by the platform confirmation
+# gate by default (design D12). Bound to a step/skill via a manifest reference.
+name: submit_feedback
+description: Submit a feedback request on the user's behalf.
+side_effecting: true
+input_schema:
+  type: object
+  properties:
+    summary:
+      type: string
+      description: Short summary of the feedback (may be pre-filled from context).
+    category:
+      type: string
+      enum: [bug, feature-request, question, other]
+    vote:
+      type: string
+      description: >
+        Overall sentiment inferred from the user's message — 'up' if positive,
+        'down' if negative. Omit if the feedback is neutral / unclear.
+      enum: [up, down]
+  required: [summary, category]

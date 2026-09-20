@@ -1,0 +1,95 @@
+schema_version: 1
+name: chatdemo-core-eval
+description: >
+  Stable bilingual regression set for ChatDemo routing, documentation retrieval,
+  citation structure, answer concepts, errors, and latency.
+
+policy:
+  minimum:
+    route_accuracy: 0.875
+    state_accuracy: 0.95
+    answer_present_rate: 0.95
+    retrieval_hit_rate: 0.80
+    citation_validity: 0.80
+    expected_source_citation_rate: 0.75
+    term_coverage: 0.75
+    case_pass_rate: 0.70
+  maximum:
+    error_rate: 0.0
+    latency_p95_ms: 30000
+  max_drop_from_baseline:
+    route_accuracy: 0.05
+    retrieval_hit_rate: 0.05
+    citation_validity: 0.05
+    expected_source_citation_rate: 0.05
+    term_coverage: 0.05
+    case_pass_rate: 0.10
+  max_relative_increase:
+    latency_p95_ms: 0.35
+
+cases:
+  - id: docs-session-storage-zh
+    query: ChatDemo 的会话如何存储？请依据项目文档回答并给出引用。
+    expected_route: docs-assistant
+    expected_sources:
+      - repo://SystemDesign.md
+    required_terms:
+      - ChatSafeSession
+      - session_id
+    tags: [docs, state, zh]
+
+  - id: docs-routing-zh
+    query: 解释 ChatDemo 的顶层路由如何选择 specialist，并引用项目文档。
+    expected_route: docs-assistant
+    expected_sources:
+      - repo://SystemDesign.md
+    required_terms:
+      - [router, routing, 路由]
+      - [specialist, 专家, 专门]
+    tags: [docs, routing, zh]
+
+  - id: docs-author-workflow
+    query: How do I add a new deterministic workflow to ChatDemo? Cite the repository documentation.
+    expected_route: docs-assistant
+    expected_sources:
+      - repo://skills/authoring-chatdemo-workflows/SKILL.md
+    required_terms:
+      - workflow.yaml
+      - steps
+    tags: [docs, authoring, en]
+
+  - id: docs-ui-proxy
+    query: Which local ports does the UI use and proxy to during development? Answer from the docs.
+    expected_route: docs-assistant
+    expected_sources:
+      - repo://ui/README.md
+    required_terms:
+      - "5173"
+      - "8000"
+    tags: [docs, ui, en]
+
+  - id: docs-model-roles
+    query: 项目里路由模型和 Skill 模型分别由哪些环境变量配置？请引用文档。
+    expected_route: docs-assistant
+    expected_sources:
+      - repo://SystemDesign.md
+      - repo://README.md
+    required_terms:
+      - CHATDEMO_ROUTER_MODEL
+      - CHATDEMO_SKILL_MODEL
+    tags: [docs, models, zh]
+
+  - id: general-greeting-zh
+    query: 你好，请简单介绍一下你能做什么。
+    expected_route: general-fallback
+    tags: [general, greeting, zh]
+
+  - id: general-writing-zh
+    query: 写一句鼓励学习的话。
+    expected_route: general-fallback
+    tags: [general, writing, zh]
+
+  - id: general-fact-en
+    query: What is the capital of France?
+    expected_route: general-fallback
+    tags: [general, factual, en]

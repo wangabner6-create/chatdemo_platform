@@ -1,0 +1,8 @@
+{
+  "topic": "docs-assistant",
+  "documents": 6,
+  "chunks": 15,
+  "embed_model": "qwen3-embedding:0.6b",
+  "rerank_model": "disabled",
+  "dims": 1024
+}

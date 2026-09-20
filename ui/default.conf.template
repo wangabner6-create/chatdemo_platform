@@ -1,0 +1,50 @@
+# Serves the compiled UI as static files and forwards the API routes to the
+# backend container.
+# ${BACKEND_URL} and ${DNS_RESOLVER} come from the container's environment at
+# startup. Using a variable (plus an explicit resolver) in proxy_pass means the
+# backend's address is looked up per-request rather than once at boot, so this
+# container can start even before the backend is reachable.
+server {
+    listen 80;
+    server_name _;
+    root /usr/share/nginx/html;
+    index index.html;
+
+    resolver ${DNS_RESOLVER} valid=10s ipv6=off;
+
+    location / {
+        try_files $uri $uri/ /index.html;
+    }
+
+    # chat + streaming replies (SSE) go to the backend
+    location /chat {
+        set $upstream ${BACKEND_URL};
+        proxy_pass $upstream;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_buffering off;          # SSE /chat/stream needs unbuffered responses
+        proxy_read_timeout 300s;
+    }
+
+    location /health {
+        set $upstream ${BACKEND_URL};
+        proxy_pass $upstream;
+        proxy_set_header Host $host;
+    }
+
+    # lets the UI rewrite a session's history (used after deleting a message)
+    location /session {
+        set $upstream ${BACKEND_URL};
+        proxy_pass $upstream;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+    }
+
+    # thumbs up/down + free-text feedback -> backend, which writes it to Redis
+    location /feedback {
+        set $upstream ${BACKEND_URL};
+        proxy_pass $upstream;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+    }
+}
