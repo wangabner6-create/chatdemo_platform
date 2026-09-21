@@ -157,18 +157,20 @@ to each originating trace. Use `--record-baseline` only after reviewing an
 intentional dataset/model change; a failing run is never accepted as a new
 baseline.
 
-`.github/workflows/observability-eval.yml` runs tests on relevant pull requests.
-To activate its live quality gate, configure these repository values:
+`.github/workflows/observability-eval.yml` runs on every pull request and every
+update to `main`. The hosted runner starts pinned Ollama and uses the real
+`qwen3:4b-instruct` plus `qwen3-embedding:0.6b` models, so the live gate needs no
+external model secret and cannot silently pass by skipping evaluation or using
+the mock client. CI rebuilds the docs index, adds the report to the Actions
+summary, uploads JSON/Markdown artifacts, and creates or updates one bot
+comment on the PR.
 
-- secrets: `CHATDEMO_EVAL_BASE_URL`, `CHATDEMO_EVAL_API_KEY`;
-- variables: `CHATDEMO_EVAL_MODEL`, `CHATDEMO_EVAL_EMBED_MODEL`;
-- optional Phoenix secrets: `CHATDEMO_EVAL_PHOENIX_ENDPOINT`,
-  `CHATDEMO_EVAL_PHOENIX_URL`, `CHATDEMO_EVAL_PHOENIX_API_KEY`.
-
-CI rebuilds the docs index with the configured embedding model before the run,
-adds the report to the Actions summary, uploads the JSON/Markdown artifacts,
-and creates or updates one bot comment on the PR. The failed evaluator process
-also makes the PR check fail, so a regression cannot be mistaken for a passive
+Phoenix export is optional for CI because the tracing server must be reachable
+from GitHub. Configure `CHATDEMO_EVAL_PHOENIX_ENDPOINT`,
+`CHATDEMO_EVAL_PHOENIX_URL`, and `CHATDEMO_EVAL_PHOENIX_API_KEY` repository
+secrets to publish traces and a versioned Dataset/Experiment. The protected
+`main` branch requires code/test, deployable-image, and evaluation checks; a
+failed threshold therefore blocks merging instead of becoming a passive
 report.
 
 **Terminal 2 — UI:**

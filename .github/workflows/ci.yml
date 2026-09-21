@@ -1,36 +1,59 @@
-name: ci
+name: CI
 
 on:
-  push:
   pull_request:
+  push:
+    branches:
+      - main
+
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
 
 defaults:
   run:
-    working-directory: chatdemo    # the backend package lives in this subdirectory
+    working-directory: chatdemo
 
 jobs:
   check:
+    name: Code quality and tests
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
-      - name: Install uv
-        uses: astral-sh/setup-uv@v3
-      - name: Sync
-        run: uv sync --extra dev
+      - name: Check out repository
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+
+      - name: Install uv and Python
+        uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4 # v10.1.0
+        with:
+          python-version: "3.11"
+          enable-cache: true
+          cache-dependency-glob: chatdemo/uv.lock
+
+      - name: Install project
+        run: uv sync --frozen --extra dev
+
       - name: Lint
         run: uv run ruff check .
+
       - name: Type check
-        run: uv run mypy || true   # non-blocking for now — type coverage isn't complete yet
+        continue-on-error: true
+        run: uv run mypy src/chatdemo
+
       - name: Test
         run: uv run pytest -q
 
   build-image:
+    name: Deployment image
     needs: check
-    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
-      - name: Build image
+      - name: Check out repository
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+
+      - name: Verify deployable image
         run: docker build -t chatdemo-platform:${{ github.sha }} ./chatdemo
-      # - name: Publish  # wire up registry credentials, then uncomment
-      #   run: docker push ...

@@ -37,3 +37,4 @@ Thumbs.db
 *.swp
 .idea/
 .vscode/
+.claude/scheduled_tasks.lock

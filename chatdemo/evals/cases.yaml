@@ -16,7 +16,9 @@ policy:
     case_pass_rate: 0.70
   maximum:
     error_rate: 0.0
-    latency_p95_ms: 30000
+    # CI runners and developer laptops have different CPU speeds. Keep latency
+    # as an absolute safety ceiling; quality scores remain baseline-relative.
+    latency_p95_ms: 120000
   max_drop_from_baseline:
     route_accuracy: 0.05
     retrieval_hit_rate: 0.05
@@ -24,8 +26,6 @@ policy:
     expected_source_citation_rate: 0.05
     term_coverage: 0.05
     case_pass_rate: 0.10
-  max_relative_increase:
-    latency_p95_ms: 0.35
 
 cases:
   - id: docs-session-storage-zh

@@ -2,13 +2,9 @@ name: Observability evaluation
 
 on:
   pull_request:
-    paths:
-      - "chatdemo/src/**"
-      - "chatdemo/evals/**"
-      - "chatdemo/scripts/ingest_docs.py"
-      - "chatdemo/pyproject.toml"
-      - "chatdemo/uv.lock"
-      - ".github/workflows/observability-eval.yml"
+  push:
+    branches:
+      - main
   workflow_dispatch:
 
 concurrency:
@@ -21,15 +17,20 @@ permissions:
 
 jobs:
   evaluate:
+    name: Evaluation quality gate
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 60
+    env:
+      OLLAMA_VERSION: "0.34.2"
+      EVAL_CHAT_MODEL: qwen3:4b-instruct
+      EVAL_EMBED_MODEL: qwen3-embedding:0.6b
     defaults:
       run:
         working-directory: chatdemo
 
     steps:
       - name: Check out repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
 
       - name: Install uv and Python
         uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4 # v10.1.0
@@ -47,51 +48,57 @@ jobs:
       - name: Check evaluation code
         run: uv run ruff check src/chatdemo/evaluation.py tests/test_evaluation.py
 
-      - name: Detect live evaluation configuration
-        id: eval-config
-        env:
-          EVAL_BASE_URL: ${{ secrets.CHATDEMO_EVAL_BASE_URL }}
-          EVAL_API_KEY: ${{ secrets.CHATDEMO_EVAL_API_KEY }}
-          EVAL_MODEL: ${{ vars.CHATDEMO_EVAL_MODEL }}
-          EVAL_EMBED_MODEL: ${{ vars.CHATDEMO_EVAL_EMBED_MODEL }}
-        shell: bash
-        run: |
-          if [[ -n "$EVAL_BASE_URL" && -n "$EVAL_API_KEY" && -n "$EVAL_MODEL" && -n "$EVAL_EMBED_MODEL" ]]; then
-            echo "configured=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "configured=false" >> "$GITHUB_OUTPUT"
-          fi
+      - name: Restore Ollama model cache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+        with:
+          path: ~/.ollama/models
+          key: ${{ runner.os }}-ollama-0.34.2-qwen3-4b-instruct-qwen3-embedding-0.6b-v1
 
-      - name: Explain skipped live evaluation
-        if: steps.eval-config.outputs.configured != 'true'
+      - name: Start pinned Ollama service
         shell: bash
         run: |
-          echo "## ChatDemo observability evaluation" >> "$GITHUB_STEP_SUMMARY"
-          echo "" >> "$GITHUB_STEP_SUMMARY"
-          echo "Deterministic tests passed, but the live regression set was skipped." >> "$GITHUB_STEP_SUMMARY"
-          echo "Configure CHATDEMO_EVAL_BASE_URL / CHATDEMO_EVAL_API_KEY secrets and CHATDEMO_EVAL_MODEL / CHATDEMO_EVAL_EMBED_MODEL variables to activate the PR quality gate." >> "$GITHUB_STEP_SUMMARY"
+          mkdir -p "$HOME/.ollama/models"
+          docker run --detach \
+            --name chatdemo-ollama \
+            --publish 11434:11434 \
+            --volume "$HOME/.ollama:/root/.ollama" \
+            "ollama/ollama:${OLLAMA_VERSION}"
+
+          for attempt in {1..60}; do
+            if curl --fail --silent http://127.0.0.1:11434/api/version >/dev/null; then
+              exit 0
+            fi
+            sleep 2
+          done
+
+          docker logs chatdemo-ollama
+          exit 1
+
+      - name: Pull real evaluation models
+        run: |
+          docker exec chatdemo-ollama ollama pull "$EVAL_CHAT_MODEL"
+          docker exec chatdemo-ollama ollama pull "$EVAL_EMBED_MODEL"
+          docker exec chatdemo-ollama ollama list
 
       - name: Rebuild the RAG index for the evaluation provider
-        if: steps.eval-config.outputs.configured == 'true'
         env:
-          CHATDEMO_BASE_URL: ${{ secrets.CHATDEMO_EVAL_BASE_URL }}
-          CHATDEMO_API_KEY: ${{ secrets.CHATDEMO_EVAL_API_KEY }}
-          CHATDEMO_EMBED_MODEL: ${{ vars.CHATDEMO_EVAL_EMBED_MODEL }}
+          CHATDEMO_BASE_URL: http://127.0.0.1:11434/v1
+          CHATDEMO_API_KEY: ollama
+          CHATDEMO_EMBED_MODEL: ${{ env.EVAL_EMBED_MODEL }}
           CHATDEMO_RERANK_MODEL: disabled
         run: uv run python scripts/ingest_docs.py
 
       - name: Run quality regression gate
-        if: steps.eval-config.outputs.configured == 'true'
         env:
-          CHATDEMO_BASE_URL: ${{ secrets.CHATDEMO_EVAL_BASE_URL }}
-          CHATDEMO_API_KEY: ${{ secrets.CHATDEMO_EVAL_API_KEY }}
-          CHATDEMO_MODEL: ${{ vars.CHATDEMO_EVAL_MODEL }}
-          CHATDEMO_ROUTER_MODEL: ${{ vars.CHATDEMO_EVAL_MODEL }}
-          CHATDEMO_SKILL_MODEL: ${{ vars.CHATDEMO_EVAL_MODEL }}
-          CHATDEMO_RELATED_MODEL: ${{ vars.CHATDEMO_EVAL_MODEL }}
+          CHATDEMO_BASE_URL: http://127.0.0.1:11434/v1
+          CHATDEMO_API_KEY: ollama
+          CHATDEMO_MODEL: ${{ env.EVAL_CHAT_MODEL }}
+          CHATDEMO_ROUTER_MODEL: ${{ env.EVAL_CHAT_MODEL }}
+          CHATDEMO_SKILL_MODEL: ${{ env.EVAL_CHAT_MODEL }}
+          CHATDEMO_RELATED_MODEL: ${{ env.EVAL_CHAT_MODEL }}
           CHATDEMO_API_STYLE: completion
           CHATDEMO_ENABLE_THINKING: "false"
-          CHATDEMO_EMBED_MODEL: ${{ vars.CHATDEMO_EVAL_EMBED_MODEL }}
+          CHATDEMO_EMBED_MODEL: ${{ env.EVAL_EMBED_MODEL }}
           CHATDEMO_RERANK_MODEL: disabled
           CHATDEMO_ENABLED: docs-assistant,general-fallback
           CHATDEMO_REDIS_URL: ""
@@ -106,7 +113,7 @@ jobs:
         run: uv run chatdemo-eval --require-baseline --version "${GITHUB_SHA::12}"
 
       - name: Add report to workflow summary
-        if: always() && steps.eval-config.outputs.configured == 'true'
+        if: always()
         shell: bash
         run: |
           if [[ -f evals/results/report.md ]]; then
@@ -114,8 +121,8 @@ jobs:
           fi
 
       - name: Upload evaluation report
-        if: always() && steps.eval-config.outputs.configured == 'true'
-        uses: actions/upload-artifact@v4
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: chatdemo-observability-eval-${{ github.run_id }}
           path: |
@@ -127,10 +134,9 @@ jobs:
       - name: Publish or update PR report
         if: >-
           always() &&
-          steps.eval-config.outputs.configured == 'true' &&
           github.event_name == 'pull_request' &&
           github.event.pull_request.head.repo.full_name == github.repository
-        uses: actions/github-script@v9
+        uses: actions/github-script@373c709c69115d41ff229c7e5df9f8788daa9553 # v9
         with:
           script: |
             const fs = require("fs");
@@ -159,3 +165,10 @@ jobs:
             } else {
               await github.rest.issues.createComment({ owner, repo, issue_number, body });
             }
+
+      - name: Stop evaluation service
+        if: always()
+        shell: bash
+        run: |
+          docker rm --force chatdemo-ollama 2>/dev/null || true
+          sudo chown --recursive "$(id -u):$(id -g)" "$HOME/.ollama" 2>/dev/null || true
