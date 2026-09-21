@@ -173,10 +173,11 @@ reviewed baseline on every machine.
 Phoenix export is optional for CI because the tracing server must be reachable
 from GitHub. Configure `CHATDEMO_EVAL_PHOENIX_ENDPOINT`,
 `CHATDEMO_EVAL_PHOENIX_URL`, and `CHATDEMO_EVAL_PHOENIX_API_KEY` repository
-secrets to publish traces and a versioned Dataset/Experiment. The protected
-`main` branch requires code/test, deployable-image, and evaluation checks; a
-failed threshold therefore blocks merging instead of becoming a passive
-report.
+secrets to publish traces and a versioned Dataset/Experiment. To make a failed
+threshold non-mergeable, protect `main` with the code/test, deployable-image,
+and evaluation checks. GitHub may require a paid plan or public repository
+visibility before protection rules can be enabled; without that repository
+setting, the checks report regressions but cannot disable the merge button.
 
 **Terminal 2 — UI:**
 

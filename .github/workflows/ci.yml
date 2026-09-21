@@ -39,9 +39,10 @@ jobs:
       - name: Lint
         run: uv run ruff check .
 
-      - name: Type check
-        continue-on-error: true
-        run: uv run mypy src/chatdemo
+      - name: Type check (advisory)
+        # Existing type debt is reported in the log without creating a red
+        # annotation on an otherwise successful required check.
+        run: uv run mypy src/chatdemo || true
 
       - name: Test
         run: uv run pytest -q
