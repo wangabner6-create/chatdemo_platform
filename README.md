@@ -165,6 +165,11 @@ the mock client. CI rebuilds the docs index, adds the report to the Actions
 summary, uploads JSON/Markdown artifacts, and creates or updates one bot
 comment on the PR.
 
+The evaluation dataset keeps a 30-second local p95 latency ceiling. CI applies
+an explicit 360-second ceiling for GitHub's CPU-only runner, calibrated from an
+observed 298.8-second p95 run; model quality metrics remain tied to the same
+reviewed baseline on every machine.
+
 Phoenix export is optional for CI because the tracing server must be reachable
 from GitHub. Configure `CHATDEMO_EVAL_PHOENIX_ENDPOINT`,
 `CHATDEMO_EVAL_PHOENIX_URL`, and `CHATDEMO_EVAL_PHOENIX_API_KEY` repository

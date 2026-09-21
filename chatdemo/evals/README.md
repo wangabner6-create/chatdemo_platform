@@ -76,6 +76,8 @@ absolute threshold or baseline-regression rule is violated. Protect `main` with
 the `Code quality and tests`, `Deployment image`, and
 `Evaluation quality gate` checks to make a failed threshold non-mergeable.
 
-Latency uses a 120-second absolute p95 ceiling instead of comparing a hosted
-runner against a developer-laptop baseline. Routing, retrieval, citations,
-answer coverage, case pass rate, and errors stay baseline-relative.
+The checked-in policy keeps a 30-second local p95 ceiling. The workflow passes
+an explicit 360-second hosted-runner override, calibrated from the first real
+GitHub CPU run (298.8-second p95), instead of comparing cloud CPU speed with a
+developer laptop. Routing, retrieval, citations, answer coverage, case pass
+rate, and errors stay baseline-relative in both environments.

@@ -49,7 +49,8 @@ jobs:
         run: uv run ruff check src/chatdemo/evaluation.py tests/test_evaluation.py
 
       - name: Restore Ollama model cache
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+        id: ollama-cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
         with:
           path: ~/.ollama/models
           key: ${{ runner.os }}-ollama-0.34.2-qwen3-4b-instruct-qwen3-embedding-0.6b-v1
@@ -75,6 +76,7 @@ jobs:
           exit 1
 
       - name: Pull real evaluation models
+        id: models
         run: |
           docker exec chatdemo-ollama ollama pull "$EVAL_CHAT_MODEL"
           docker exec chatdemo-ollama ollama pull "$EVAL_EMBED_MODEL"
@@ -110,7 +112,13 @@ jobs:
           CHATDEMO_TRACE_PROJECT: chatdemo-ci
           CHATDEMO_EVAL_PUBLISH_PHOENIX: ${{ secrets.CHATDEMO_EVAL_PHOENIX_URL != '' && 'true' || 'false' }}
           PHOENIX_API_KEY: ${{ secrets.CHATDEMO_EVAL_PHOENIX_API_KEY }}
-        run: uv run chatdemo-eval --require-baseline --version "${GITHUB_SHA::12}"
+        # The hosted CPU runner is intentionally given its own observed latency
+        # ceiling; quality metrics still use the reviewed cross-machine baseline.
+        run: >-
+          uv run chatdemo-eval
+          --require-baseline
+          --latency-p95-ceiling-ms 360000
+          --version "${GITHUB_SHA::12}"
 
       - name: Add report to workflow summary
         if: always()
@@ -172,3 +180,13 @@ jobs:
         run: |
           docker rm --force chatdemo-ollama 2>/dev/null || true
           sudo chown --recursive "$(id -u):$(id -g)" "$HOME/.ollama" 2>/dev/null || true
+
+      - name: Save Ollama model cache
+        if: >-
+          always() &&
+          steps.models.outcome == 'success' &&
+          steps.ollama-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+        with:
+          path: ~/.ollama/models
+          key: ${{ steps.ollama-cache.outputs.cache-primary-key }}

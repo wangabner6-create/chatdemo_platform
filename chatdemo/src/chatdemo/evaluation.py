@@ -423,6 +423,21 @@ def compare_metrics(
     return GateResult(passed=not violations, violations=violations)
 
 
+def policy_with_overrides(
+    policy: GatePolicy,
+    *,
+    latency_p95_ceiling_ms: float | None = None,
+) -> GatePolicy:
+    """Return an isolated policy with environment-specific runtime ceilings."""
+
+    effective = policy.model_copy(deep=True)
+    if latency_p95_ceiling_ms is not None:
+        if latency_p95_ceiling_ms <= 0:
+            raise ValueError("latency p95 ceiling must be greater than zero")
+        effective.maximum["latency_p95_ms"] = latency_p95_ceiling_ms
+    return effective
+
+
 def _metric_label(name: str, value: float) -> str | None:
     if name == "error_rate":
         return "pass" if value == 0 else "fail"
@@ -678,6 +693,12 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--baseline", type=Path, default=Path("evals/baseline.json"))
     parser.add_argument("--output-dir", type=Path, default=Path("evals/results"))
     parser.add_argument("--concurrency", type=int, default=1)
+    parser.add_argument(
+        "--latency-p95-ceiling-ms",
+        type=float,
+        default=None,
+        help="override only the p95 latency ceiling for this execution environment",
+    )
     parser.add_argument("--version", default=os.environ.get("CHATDEMO_EVAL_VERSION", ""))
     parser.add_argument("--record-baseline", action="store_true")
     parser.add_argument("--require-baseline", action="store_true")
@@ -700,6 +721,10 @@ def _parser() -> argparse.ArgumentParser:
 async def _run_cli(args: argparse.Namespace) -> int:
     project_root = Path(__file__).resolve().parents[2]
     dataset = load_dataset(args.dataset)
+    policy = policy_with_overrides(
+        dataset.policy,
+        latency_p95_ceiling_ms=args.latency_p95_ceiling_ms,
+    )
     settings = Settings.from_env()
     digest = dataset_digest(dataset)
     version = args.version or application_fingerprint(project_root, dataset, settings)
@@ -716,7 +741,7 @@ async def _run_cli(args: argparse.Namespace) -> int:
         run_id=run_id,
     )
     metrics = aggregate_metrics(results)
-    gate = compare_metrics(metrics, dataset.policy, baseline, current_dataset_digest=digest)
+    gate = compare_metrics(metrics, policy, baseline, current_dataset_digest=digest)
     report = EvaluationReport(
         run_id=run_id,
         version=version,
@@ -755,8 +780,8 @@ async def _run_cli(args: argparse.Namespace) -> int:
             report.baseline = write_baseline(args.baseline, report)
         else:
             report.gate.violations.append("baseline not updated because the quality gate failed")
-    write_report(args.output_dir, report, dataset.policy)
-    print(render_markdown(report, dataset.policy))
+    write_report(args.output_dir, report, policy)
+    print(render_markdown(report, policy))
     print(f"Reports: {args.output_dir / 'report.json'} and {args.output_dir / 'report.md'}")
     return 0 if report.gate.passed else 1
 
