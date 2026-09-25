@@ -226,8 +226,28 @@ jobs:
           docker logs "$container_name"
           exit 1
 
-      - name: Promote verified digest to latest
+      - name: Confirm the release is still current
+        id: freshness
         if: steps.release.outputs.current == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_SHA: ${{ steps.release.outputs.sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          main_sha="$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/heads/main" --jq .object.sha)"
+          if [[ "$RELEASE_SHA" == "$main_sha" ]]; then
+            echo "current=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          echo "current=false" >> "$GITHUB_OUTPUT"
+          echo "A newer main commit ${main_sha} arrived; keeping the immutable image but not moving latest."
+
+      - name: Promote verified digest to latest
+        if: >-
+          steps.release.outputs.current == 'true' &&
+          steps.freshness.outputs.current == 'true'
         env:
           DIGEST: ${{ steps.publish.outputs.digest }}
           IMAGE: ${{ steps.release.outputs.image }}
@@ -244,6 +264,7 @@ jobs:
           CI_RUN: ${{ steps.gates.outputs.ci_run }}
           DIGEST: ${{ steps.publish.outputs.digest }}
           EVALUATION_RUN: ${{ steps.gates.outputs.evaluation_run }}
+          IS_CURRENT: ${{ steps.freshness.outputs.current }}
           IMAGE: ${{ steps.release.outputs.image }}
           RELEASE_SHA: ${{ steps.release.outputs.sha }}
         shell: bash
@@ -253,7 +274,11 @@ jobs:
             echo
             echo "- Source commit: \`${RELEASE_SHA}\`"
             echo "- Immutable image: \`${IMAGE}@${DIGEST}\`"
-            echo "- Moving tag: \`${IMAGE}:latest\`"
+            if [[ "$IS_CURRENT" == "true" ]]; then
+              echo "- Moving tag: \`${IMAGE}:latest\` (promoted)"
+            else
+              echo "- Moving tag: unchanged because a newer main commit arrived"
+            fi
             echo "- [Code/test gate](${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${CI_RUN})"
             echo "- [Evaluation gate](${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${EVALUATION_RUN})"
             echo "- [Container packages](${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY_OWNER}?tab=packages)"

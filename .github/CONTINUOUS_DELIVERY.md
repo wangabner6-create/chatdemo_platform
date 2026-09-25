@@ -43,8 +43,9 @@ Before publishing it:
 3. builds and starts the candidate image;
 4. publishes `ghcr.io/wangabner6-create/chatdemo_platform:sha-<full-sha>`;
 5. pulls the registry digest back and starts it again; and
-6. updates `ghcr.io/wangabner6-create/chatdemo_platform:latest` only after the
-   published digest passes `/health`.
+6. checks the current `main` SHA again, then updates
+   `ghcr.io/wangabner6-create/chatdemo_platform:latest` only when the published
+   digest passed `/health` and is still the newest commit.
 
 The workflow uses the repository-scoped `GITHUB_TOKEN`; no long-lived registry
 password is required. GitHub records the run, source commit, upstream gate run
