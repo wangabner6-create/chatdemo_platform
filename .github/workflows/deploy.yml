@@ -1,0 +1,266 @@
+name: Deploy verified image
+
+on:
+  workflow_run:
+    workflows:
+      - Observability evaluation
+    types:
+      - completed
+
+concurrency:
+  group: deploy-ghcr-main
+  cancel-in-progress: false
+
+permissions:
+  actions: read
+  contents: read
+  packages: write
+
+jobs:
+  publish:
+    name: Publish verified image
+    if: >-
+      github.event.workflow_run.event == 'push' &&
+      github.event.workflow_run.head_branch == 'main' &&
+      github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      REGISTRY: ghcr.io
+
+    steps:
+      - name: Resolve trusted release commit
+        id: release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EVALUATED_SHA: ${{ github.event.workflow_run.head_sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          main_sha="$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/heads/main" --jq .object.sha)"
+          if [[ "$EVALUATED_SHA" != "$main_sha" ]]; then
+            echo "current=false" >> "$GITHUB_OUTPUT"
+            echo "Skipping stale evaluation ${EVALUATED_SHA}; main is now ${main_sha}."
+            exit 0
+          fi
+
+          image="${REGISTRY}/${GITHUB_REPOSITORY,,}"
+          {
+            echo "current=true"
+            echo "sha=${EVALUATED_SHA}"
+            echo "short_sha=${EVALUATED_SHA:0:12}"
+            echo "image=${image}"
+            echo "immutable_tag=${image}:sha-${EVALUATED_SHA}"
+            echo "latest_tag=${image}:latest"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Record stale evaluation
+        if: steps.release.outputs.current != 'true'
+        env:
+          EVALUATED_SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          echo "## Release skipped" >> "$GITHUB_STEP_SUMMARY"
+          echo >> "$GITHUB_STEP_SUMMARY"
+          echo "The successful evaluation for \`${EVALUATED_SHA}\` became stale before publishing, so no image was changed." >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Verify all required gates for this commit
+        id: gates
+        if: steps.release.outputs.current == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TARGET_SHA: ${{ steps.release.outputs.sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          successful_run() {
+            local workflow_file="$1"
+            gh api --method GET \
+              "repos/${GITHUB_REPOSITORY}/actions/workflows/${workflow_file}/runs" \
+              -f branch=main \
+              -f event=push \
+              -f status=completed \
+              -f per_page=100 \
+              | jq --arg sha "$TARGET_SHA" \
+                '[.workflow_runs[] | select(.head_sha == $sha and .conclusion == "success")]
+                 | sort_by(.run_started_at)
+                 | last
+                 | .id // empty'
+          }
+
+          ci_run=""
+          evaluation_run=""
+          for attempt in {1..60}; do
+            ci_run="$(successful_run ci.yml)"
+            evaluation_run="$(successful_run observability-eval.yml)"
+            if [[ -n "$ci_run" && -n "$evaluation_run" ]]; then
+              break
+            fi
+            echo "Waiting for successful CI and evaluation runs for ${TARGET_SHA} (${attempt}/60)."
+            sleep 10
+          done
+
+          if [[ -z "$ci_run" || -z "$evaluation_run" ]]; then
+            echo "Required successful gate runs were not found for ${TARGET_SHA}." >&2
+            exit 1
+          fi
+
+          {
+            echo "ci_run=${ci_run}"
+            echo "evaluation_run=${evaluation_run}"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Check out the verified commit
+        if: steps.release.outputs.current == 'true'
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: ${{ steps.release.outputs.sha }}
+          persist-credentials: false
+
+      - name: Build release candidate
+        if: steps.release.outputs.current == 'true'
+        env:
+          IMMUTABLE_TAG: ${{ steps.release.outputs.immutable_tag }}
+          LATEST_TAG: ${{ steps.release.outputs.latest_tag }}
+          RELEASE_SHA: ${{ steps.release.outputs.sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker build --pull \
+            --label "org.opencontainers.image.source=https://github.com/${GITHUB_REPOSITORY}" \
+            --label "org.opencontainers.image.revision=${RELEASE_SHA}" \
+            --tag "$IMMUTABLE_TAG" \
+            --tag "$LATEST_TAG" \
+            chatdemo
+
+      - name: Smoke-test release candidate
+        if: steps.release.outputs.current == 'true'
+        env:
+          IMMUTABLE_TAG: ${{ steps.release.outputs.immutable_tag }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          container_name="chatdemo-release-candidate"
+          cleanup() {
+            docker rm --force "$container_name" >/dev/null 2>&1 || true
+          }
+          trap cleanup EXIT
+
+          docker run --detach \
+            --name "$container_name" \
+            --publish 127.0.0.1:18000:8000 \
+            "$IMMUTABLE_TAG"
+
+          for attempt in {1..60}; do
+            if curl --fail --silent --show-error http://127.0.0.1:18000/health \
+              | jq --exit-status '.status == "ok"' >/dev/null; then
+              echo "Release candidate passed /health."
+              exit 0
+            fi
+            sleep 2
+          done
+
+          docker logs "$container_name"
+          exit 1
+
+      - name: Sign in to GitHub Container Registry
+        if: steps.release.outputs.current == 'true'
+        env:
+          GHCR_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          printf '%s' "$GHCR_TOKEN" \
+            | docker login "$REGISTRY" --username "$GITHUB_ACTOR" --password-stdin
+
+      - name: Publish immutable image
+        id: publish
+        if: steps.release.outputs.current == 'true'
+        env:
+          IMMUTABLE_TAG: ${{ steps.release.outputs.immutable_tag }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          push_log="$(mktemp)"
+          docker push "$IMMUTABLE_TAG" 2>&1 | tee "$push_log"
+          digest="$({ sed -n 's/.*digest: \(sha256:[0-9a-f]\{64\}\).*/\1/p' "$push_log" || true; } | tail -n 1)"
+          if [[ -z "$digest" ]]; then
+            echo "The registry did not return an image digest." >&2
+            exit 1
+          fi
+          echo "digest=${digest}" >> "$GITHUB_OUTPUT"
+
+      - name: Pull and smoke-test the published digest
+        if: steps.release.outputs.current == 'true'
+        env:
+          DIGEST: ${{ steps.publish.outputs.digest }}
+          IMAGE: ${{ steps.release.outputs.image }}
+          IMMUTABLE_TAG: ${{ steps.release.outputs.immutable_tag }}
+          LATEST_TAG: ${{ steps.release.outputs.latest_tag }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          release_ref="${IMAGE}@${DIGEST}"
+          container_name="chatdemo-published-release"
+          cleanup() {
+            docker rm --force "$container_name" >/dev/null 2>&1 || true
+          }
+          trap cleanup EXIT
+
+          docker image rm "$IMMUTABLE_TAG" "$LATEST_TAG" >/dev/null 2>&1 || true
+          docker pull "$release_ref"
+          docker run --detach \
+            --name "$container_name" \
+            --publish 127.0.0.1:18000:8000 \
+            "$release_ref"
+
+          for attempt in {1..60}; do
+            if curl --fail --silent --show-error http://127.0.0.1:18000/health \
+              | jq --exit-status '.status == "ok"' >/dev/null; then
+              echo "Published digest passed /health."
+              exit 0
+            fi
+            sleep 2
+          done
+
+          docker logs "$container_name"
+          exit 1
+
+      - name: Promote verified digest to latest
+        if: steps.release.outputs.current == 'true'
+        env:
+          DIGEST: ${{ steps.publish.outputs.digest }}
+          IMAGE: ${{ steps.release.outputs.image }}
+          LATEST_TAG: ${{ steps.release.outputs.latest_tag }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker tag "${IMAGE}@${DIGEST}" "$LATEST_TAG"
+          docker push "$LATEST_TAG"
+
+      - name: Write release summary
+        if: steps.release.outputs.current == 'true'
+        env:
+          CI_RUN: ${{ steps.gates.outputs.ci_run }}
+          DIGEST: ${{ steps.publish.outputs.digest }}
+          EVALUATION_RUN: ${{ steps.gates.outputs.evaluation_run }}
+          IMAGE: ${{ steps.release.outputs.image }}
+          RELEASE_SHA: ${{ steps.release.outputs.sha }}
+        shell: bash
+        run: |
+          {
+            echo "## Verified container release"
+            echo
+            echo "- Source commit: \`${RELEASE_SHA}\`"
+            echo "- Immutable image: \`${IMAGE}@${DIGEST}\`"
+            echo "- Moving tag: \`${IMAGE}:latest\`"
+            echo "- [Code/test gate](${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${CI_RUN})"
+            echo "- [Evaluation gate](${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${EVALUATION_RUN})"
+            echo "- [Container packages](${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY_OWNER}?tab=packages)"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Sign out and clean up
+        if: always()
+        run: |
+          docker rm --force chatdemo-release-candidate chatdemo-published-release 2>/dev/null || true
+          docker logout "$REGISTRY" 2>/dev/null || true
