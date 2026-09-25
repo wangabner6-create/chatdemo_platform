@@ -10,12 +10,11 @@ from __future__ import annotations
 
 import importlib.util
 import os
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
 import yaml
-
-from dataclasses import dataclass, field
 
 from .contracts import Descriptor, Handler
 from .handlers import StepSpec, WorkflowHandler

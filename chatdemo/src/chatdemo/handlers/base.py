@@ -42,7 +42,7 @@ class HandlerDeps:
     related_runner: Runner | None = None
     # Maps each tool name this handler registered to its owner-scoped
     # orchestration function.
-    tools: dict[str, "LoadedTool"] = field(default_factory=dict)
+    tools: dict[str, LoadedTool] = field(default_factory=dict)
     handler_id: str = ""
 
 

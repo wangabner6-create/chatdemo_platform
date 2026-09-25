@@ -18,8 +18,9 @@ import ast
 import asyncio
 import logging
 import time
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
-from typing import Any, Awaitable, Callable
+from typing import Any
 
 from ..contracts import Descriptor, RequestContext, Response, ResponseMeta, ResponseState, Source
 from ..observability import emit, log
@@ -101,7 +102,9 @@ def _safe_predicate(expr: str, ns: dict[str, Any]) -> bool:
     tree = ast.parse(expr, mode="eval")
     for n in ast.walk(tree):
         if not isinstance(n, _ALLOWED):
-            raise ValueError(f"unsafe `when` predicate {expr!r}: {type(n).__name__}")
+            raise ValueError(  # noqa: TRY004 - public predicate API rejects invalid syntax
+                f"unsafe `when` predicate {expr!r}: {type(n).__name__}"
+            )
     return bool(_eval(tree, ns))
 
 
@@ -276,7 +279,7 @@ class WorkflowHandler:
             try:
                 value = await s.fn(inputs, ctx, self._deps)
                 break
-            except Exception as exc:  # noqa: BLE001 — broad catch is intentional, it's what drives the per-step retry logic
+            except Exception as exc:
                 if attempt >= s.retry:
                     emit("step", event="error", id=s.id, attempt=attempt, error=repr(exc))
                     raise

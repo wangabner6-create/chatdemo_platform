@@ -59,14 +59,25 @@ make a regression pass.
 
 ## CI configuration
 
-The GitHub Actions workflow always runs deterministic tests. The live agent
-gate activates when these repository settings exist:
+The GitHub Actions workflow runs for every pull request and every update to
+`main`. It starts a pinned Ollama service on the hosted runner, restores its
+model cache, pulls `qwen3:4b-instruct` plus `qwen3-embedding:0.6b`, rebuilds the
+RAG index, and executes the real agent. The gate therefore cannot turn green by
+silently falling back to the mock client or skipping the live regression set.
 
-- secrets: `CHATDEMO_EVAL_BASE_URL`, `CHATDEMO_EVAL_API_KEY`;
-- variables: `CHATDEMO_EVAL_MODEL`, `CHATDEMO_EVAL_EMBED_MODEL`;
-- optional Phoenix secrets: `CHATDEMO_EVAL_PHOENIX_ENDPOINT`,
-  `CHATDEMO_EVAL_PHOENIX_URL`, `CHATDEMO_EVAL_PHOENIX_API_KEY`.
+Phoenix publishing remains optional. Configure
+`CHATDEMO_EVAL_PHOENIX_ENDPOINT`, `CHATDEMO_EVAL_PHOENIX_URL`, and
+`CHATDEMO_EVAL_PHOENIX_API_KEY` as repository secrets to export CI traces and a
+versioned Dataset/Experiment to a network-accessible Phoenix instance.
 
 On a pull request, the workflow uploads both reports, adds the Markdown report
 to the run summary, updates a single bot comment, and fails the check when any
-absolute threshold or baseline-regression rule is violated.
+absolute threshold or baseline-regression rule is violated. Protect `main` with
+the `Code quality and tests`, `Deployment image`, and
+`Evaluation quality gate` checks to make a failed threshold non-mergeable.
+
+The checked-in policy keeps a 30-second local p95 ceiling. The workflow passes
+an explicit 360-second hosted-runner override, calibrated from the first real
+GitHub CPU run (298.8-second p95), instead of comparing cloud CPU speed with a
+developer laptop. Routing, retrieval, citations, answer coverage, case pass
+rate, and errors stay baseline-relative in both environments.

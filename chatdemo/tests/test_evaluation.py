@@ -13,6 +13,7 @@ from chatdemo.evaluation import (
     aggregate_metrics,
     compare_metrics,
     evaluate_dataset,
+    policy_with_overrides,
     score_response,
 )
 
@@ -154,3 +155,14 @@ def test_gate_rejects_stale_dataset_baseline() -> None:
     assert gate.violations == [
         "dataset changed: record a reviewed baseline for the new dataset version"
     ]
+
+
+def test_latency_ceiling_override_is_isolated_and_validated() -> None:
+    original = GatePolicy(maximum={"latency_p95_ms": 30_000})
+
+    effective = policy_with_overrides(original, latency_p95_ceiling_ms=360_000)
+
+    assert original.maximum["latency_p95_ms"] == 30_000
+    assert effective.maximum["latency_p95_ms"] == 360_000
+    with pytest.raises(ValueError, match="greater than zero"):
+        policy_with_overrides(original, latency_p95_ceiling_ms=0)

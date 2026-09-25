@@ -1,15 +1,15 @@
 """Adapters that abstract how a model call is made (axis 1: completion vs response style, within a single provider)."""
 
-from .base import ModelClient, ModelRunner, ModelSettings, RunResult, Runner
+from .base import ModelClient, ModelRunner, ModelSettings, Runner, RunResult
 from .mock import MockModelClient
 
 __all__ = [
+    "MockModelClient",
     "ModelClient",
     "ModelRunner",
     "ModelSettings",
     "RunResult",
     "Runner",
-    "MockModelClient",
     "build_runner",
 ]
 

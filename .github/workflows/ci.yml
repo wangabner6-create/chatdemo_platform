@@ -1,36 +1,87 @@
-name: ci
+name: CI
 
 on:
-  push:
   pull_request:
+  push:
+    branches:
+      - main
+
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
 
 defaults:
   run:
-    working-directory: chatdemo    # the backend package lives in this subdirectory
+    working-directory: chatdemo
 
 jobs:
   check:
+    name: Code quality and tests
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
-      - name: Install uv
-        uses: astral-sh/setup-uv@v3
-      - name: Sync
-        run: uv sync --extra dev
+      - name: Check out repository
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+
+      - name: Install uv and Python
+        uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4 # v10.1.0
+        with:
+          python-version: "3.11"
+          enable-cache: true
+          cache-dependency-glob: chatdemo/uv.lock
+
+      - name: Install project
+        run: uv sync --frozen --extra dev
+
       - name: Lint
         run: uv run ruff check .
-      - name: Type check
-        run: uv run mypy || true   # non-blocking for now — type coverage isn't complete yet
+
+      - name: Type check (advisory)
+        # Existing type debt is reported in the log without creating a red
+        # annotation on an otherwise successful required check.
+        run: uv run mypy src/chatdemo || true
+
       - name: Test
         run: uv run pytest -q
 
   build-image:
+    name: Deployment image
     needs: check
-    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
-      - name: Build image
-        run: docker build -t chatdemo-platform:${{ github.sha }} ./chatdemo
-      # - name: Publish  # wire up registry credentials, then uncomment
-      #   run: docker push ...
+      - name: Check out repository
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+
+      - name: Verify deployable image
+        run: docker build -t chatdemo-platform:${{ github.sha }} .
+
+      - name: Smoke-test deployment image
+        shell: bash
+        run: |
+          set -euo pipefail
+          container_name="chatdemo-ci-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          cleanup() {
+            docker rm --force "$container_name" >/dev/null 2>&1 || true
+          }
+          trap cleanup EXIT
+
+          docker run --detach \
+            --name "$container_name" \
+            --publish 127.0.0.1:18000:8000 \
+            "chatdemo-platform:${GITHUB_SHA}"
+
+          for attempt in {1..60}; do
+            if curl --fail --silent --show-error http://127.0.0.1:18000/health \
+              | jq --exit-status '.status == "ok"' >/dev/null; then
+              echo "Deployment image passed /health."
+              exit 0
+            fi
+            sleep 2
+          done
+
+          docker logs "$container_name"
+          exit 1

@@ -1,9 +1,9 @@
 {
   "schema_version": 1,
   "dataset_name": "chatdemo-core-eval",
-  "dataset_digest": "738d42e94ef36280d5fe7870b5795ac7451394f9662ed9efd2faf6978a551062",
-  "version": "local-qwen3-baseline",
-  "created_at": "2026-09-15T10:32:31.319641+00:00",
+  "dataset_digest": "552a0defdc2282965ea99f0b5a0df4c5650258a2442019e4bce5a76c25cffdff",
+  "version": "qwen3-baseline-ci-portable-policy",
+  "created_at": "2026-09-21T15:37:01+00:00",
   "metrics": {
     "route_accuracy": 1.0,
     "term_coverage": 1.0,
